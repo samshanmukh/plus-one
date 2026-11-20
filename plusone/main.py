@@ -26,8 +26,13 @@ def process(msg: dict) -> None:
     if config.ALLOWED_NUMBERS and number not in config.ALLOWED_NUMBERS:
         log.info("ignoring message from %s (not in ALLOWED_NUMBERS)", number)
         return
+    media = msg.get("media") or []
+    if media:
+        handled = handle_attachments(number or conv, conv, media)
+        if handled and not text:
+            return
     if not text:
-        inkbox.send(conv, "I can only read text for now. Send me a topic or an event link.")
+        inkbox.send(conv, "I can read text, and LinkedIn's Connections.csv or export ZIP. Send me a topic or an event link.")
         return
     log.info("<- %s: %s", number, text)
     inkbox.typing(conv)
@@ -48,6 +53,67 @@ def process(msg: dict) -> None:
         except Exception as exc:
             log.warning("couldn't send image %s: %s", path, exc)
     log.info("-> %s: %s", number, reply)
+
+
+def handle_attachments(chat: str, conv: str, media: list[dict]) -> bool:
+    """Load a LinkedIn connections export sent as an iMessage attachment."""
+    import httpx
+    from . import linkedin
+    for m in media:
+        ctype = (m.get("content_type") or "").lower()
+        url = m.get("url") or ""
+        if not url or not any(k in ctype for k in ("csv", "zip", "text", "octet-stream", "excel")):
+            continue
+        try:
+            data = httpx.get(url, timeout=60, follow_redirects=True).content
+            people = linkedin.parse_export(data, url.split("?")[0])
+        except Exception as exc:
+            inkbox.send(conv, f"I couldn't read that file as a LinkedIn export ({str(exc)[:120]}).")
+            return True
+        n = linkedin.save_connections(chat, people)
+        store.audit(chat, "linkedin", f"Connected LinkedIn: loaded {n} connections from export")
+        inkbox.send(conv, f"LinkedIn connected: {n} connections loaded. I'll keep an eye on your upcoming events "
+                          "and tell you when people you know are going.")
+        log.info("loaded %s LinkedIn connections for %s", n, chat)
+        try:
+            check_people_at_events(force=True)
+        except Exception as exc:
+            log.warning("people check failed: %s", exc)
+        return True
+    return False
+
+
+PEOPLE_EVERY = 3600  # re-check who's going to your events hourly
+
+
+def check_people_at_events(force: bool = False) -> None:
+    """Text the user when their LinkedIn connections host or attend events they're going to."""
+    from datetime import datetime, timedelta
+    from . import linkedin, tools
+    now = datetime.now(config.TZ)
+    for number in config.ALLOWED_NUMBERS:
+        conv = store.get_state(f"conv:{number}")
+        if not conv or not any(linkedin.connections(number)):
+            continue
+        events = tools.my_events(number, now.isoformat(), (now + timedelta(days=7)).isoformat())["events"]
+        for e in events:
+            if e["source"] != "luma" or not e.get("link"):
+                continue
+            found = tools.who_is_going(number, e["link"]).get("connections_going") or []
+            new = [p for p in found if not store.get_state(f"people:{number}:{e['start']}:{p['name']}")]
+            if not new:
+                continue
+            names = "; ".join(f"{p['name']}{' (' + p['position'] + ' at ' + p['company'] + ')' if p.get('company') else ''}"
+                              f"{', hosting' if p.get('role_at_event') == 'host' else ''}" for p in new[:4])
+            msg = f"People you know at {e['title']} ({e['when']}): {names}."
+            if len(new) > 4:
+                msg += f" +{len(new) - 4} more."
+            inkbox.send(conv, msg)
+            for p in new:
+                store.set_state(f"people:{number}:{e['start']}:{p['name']}", True)
+            store.add_message(number, "assistant", msg)
+            store.audit(number, "people_alert", f"Connections at {e['title'][:50]}: {len(new)}")
+            log.info("-> %s (people): %s", number, msg)
 
 
 ALERT_EVERY = 120  # seconds between leave-now checks
@@ -178,6 +244,7 @@ def main() -> None:
         log.warning("couldn't seed conversations: %s", exc)
     last_alert_check = 0.0
     last_mail_check = 0.0
+    last_people_check = 0.0
     while True:
         try:
             for msg in inkbox.unread_inbound():
@@ -190,6 +257,12 @@ def main() -> None:
                 check_leave_alerts()
             except Exception as exc:
                 log.warning("alert check error: %s", exc)
+        if time.time() - last_people_check > PEOPLE_EVERY:
+            last_people_check = time.time()
+            try:
+                check_people_at_events()
+            except Exception as exc:
+                log.warning("people check error: %s", exc)
         if time.time() - last_mail_check > MAIL_EVERY:
             last_mail_check = time.time()
             try:

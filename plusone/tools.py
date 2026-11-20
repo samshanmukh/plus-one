@@ -138,10 +138,9 @@ def who_is_going(chat: str, url: str) -> dict:
     """Which of the user's LinkedIn connections are hosting or featured at a Luma event."""
     import re
     from . import linkedin
-    by_handle, _ = linkedin.connections()
-    if not by_handle and not linkedin.connections()[1]:
-        return {"error": "No LinkedIn connections loaded yet. Ask the user to export Connections from LinkedIn "
-                         "(Settings > Data privacy > Get a copy of your data) and drop Connections.csv in Plus One's data folder."}
+    by_handle, by_name = linkedin.connections(chat)
+    if not by_handle and not by_name:
+        return {"error": "LinkedIn isn't connected yet. Call connect_linkedin to give the user the steps."}
     m = re.search(r"(?:lu\.ma|luma\.com)/(?:event/)?([A-Za-z0-9-]+)", url)
     if not m:
         return {"error": "Only Luma events show their guests publicly right now; send a Luma link."}
@@ -149,7 +148,7 @@ def who_is_going(chat: str, url: str) -> dict:
     people = [{"name": h.get("name"), "linkedin_handle": h.get("linkedin_handle"), "role": "host"} for h in d.get("hosts") or []]
     people += [{"name": g.get("name"), "linkedin_handle": g.get("linkedin_handle"), "role": "guest"}
                for g in d.get("featured_guests") or []]
-    found = linkedin.match(people)
+    found = linkedin.match(people, chat)
     return {"event": (d.get("event") or {}).get("name"), "connections_going": found,
             "checked": len(people), "guest_count": d.get("guest_count"),
             "note": "Luma only shows hosts and featured guests publicly, so others may be going too."}
@@ -242,7 +241,7 @@ def suggest_for_me(chat: str, start: str | None = None, end: str | None = None, 
             clash = []
         if clash:
             continue
-        if e["source"] == "luma" and any(linkedin.connections()):
+        if e["source"] == "luma" and any(linkedin.connections(chat)):
             try:
                 people = who_is_going(chat, e["url"]).get("connections_going") or []
                 if people:
@@ -257,6 +256,20 @@ def suggest_for_me(chat: str, start: str | None = None, end: str | None = None, 
     store.remember_events(chat, [_seen_events[p["id"]] for p in picks])
     return {"picks": picks, "learned_from": profile["events_learned_from"],
             "your_top_topics": list(profile["topics"])[:8], "checked": len(seen)}
+
+
+LINKEDIN_EXPORT_URL = "https://www.linkedin.com/mypreferences/d/download-my-data"
+
+
+def connect_linkedin(chat: str) -> dict:
+    meta = store.get_state(f"linkedin_meta:{chat}")
+    return {"connected": bool(meta), "connections": (meta or {}).get("count", 0), "loaded": (meta or {}).get("loaded"),
+            "steps": ["Open " + LINKEDIN_EXPORT_URL + " (signed in to LinkedIn)",
+                      "Choose 'Want something in particular?', tick Connections, tap Request archive",
+                      "LinkedIn emails a download link in ~10 minutes; download the file",
+                      "Send the Connections.csv (or the whole ZIP) here in iMessage"],
+            "why": "LinkedIn doesn't let apps read your connections, but you can export them yourself. "
+                   "Plus One keeps them private to you and re-checks your upcoming events for people you know."}
 
 
 def save_rule(chat: str, text: str, kind: str = "preference") -> dict:
@@ -404,6 +417,11 @@ TOOLS: list[dict] = [
             "end": {"type": "string", "description": "ISO 8601; default 7 days later"}}, "required": []},
     },
     {
+        "name": "connect_linkedin",
+        "description": "Connect (or check) the user's LinkedIn so Plus One can tell them which connections go to their events. Returns status and the steps to send their connections export over iMessage.",
+        "input_schema": {"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+    },
+    {
         "name": "check_calendar",
         "description": "List the user's calendar events between two ISO 8601 times, to find conflicts or free time.",
         "input_schema": {"type": "object", "additionalProperties": False, "properties": {
@@ -463,6 +481,7 @@ _FUNCS = {
     "who_is_going": lambda chat, a: who_is_going(chat, a["url"]),
     "ticket_qr": lambda chat, a: ticket_qr(chat, a["event"]),
     "suggest_for_me": lambda chat, a: suggest_for_me(chat, a.get("start"), a.get("end")),
+    "connect_linkedin": lambda chat, a: connect_linkedin(chat),
     "check_calendar": lambda chat, a: check_calendar(chat, a["start"], a["end"]),
     "save_rule": lambda chat, a: save_rule(chat, a["text"], a.get("kind", "preference")),
     "list_rules": lambda chat, a: list_rules(chat),
