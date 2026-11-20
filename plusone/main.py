@@ -102,6 +102,35 @@ def nudge_missing_sources() -> None:
                 store.audit(number, "nudge", "Asked to connect Partiful (events seen on calendar)")
 
 
+TEASER_AFTER_HOUR = 10  # local time; at most one teaser per day
+
+
+def send_daily_teaser() -> None:
+    """Once a day, text one personal pick as a curious question to pull the user into more events."""
+    from datetime import datetime
+    from . import tools
+    now = datetime.now(config.TZ)
+    if now.hour < TEASER_AFTER_HOUR or now.hour >= 21:
+        return
+    for number in config.ALLOWED_NUMBERS:
+        conv = store.get_state(f"conv:{number}")
+        key = f"teaser:{number}:{now.date().isoformat()}"
+        if not conv or store.get_state(key):
+            continue
+        store.set_state(key, True)  # mark first so a failure never causes repeats
+        picks = tools.suggest_for_me(number).get("picks") or []
+        if not picks:
+            continue
+        msg = brain.compose_teaser(number, picks)
+        text, cards = _split_cards(msg)
+        inkbox.send(conv, text)
+        for url in cards[:1]:
+            inkbox.send(conv, url)
+        store.add_message(number, "assistant", msg)
+        store.audit(number, "teaser", f"Daily pick: {picks[0]['title'][:60]}")
+        log.info("-> %s (teaser): %s", number, msg)
+
+
 PEOPLE_EVERY = 3600  # re-check who's going to your events hourly
 
 
@@ -281,6 +310,7 @@ def main() -> None:
             try:
                 check_people_at_events()
                 nudge_missing_sources()
+                send_daily_teaser()
             except Exception as exc:
                 log.warning("people check error: %s", exc)
         if time.time() - last_mail_check > MAIL_EVERY:
