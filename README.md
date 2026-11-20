@@ -78,6 +78,14 @@ iMessage ──> Inkbox (iMessage line + email inbox) ──poll──> plusone.
 
 `plusone/taste.py` reads ~60 days of your calendar (in the background, cached daily) and keeps a profile of the topics and venues you actually show up for, e.g. `ai ×17, hackathon ×15, agents ×6`, `AWS Builder Loft ×4`. `suggest_for_me` pulls this week's Luma and Meetup events, scores each against that profile plus your saved interests, drops sold-out, over-budget and clashing ones, and adds +2 per LinkedIn connection attending.
 
+### Trusted context on Senso
+
+Your rules, taste profile and every booking receipt are written to a **Senso** knowledge base. Before proposing a booking, Plus One calls Senso's `/org/search/context` and grounds its recommendation in the returned passages ("fits your $30 cap"); the cited Senso `content_id`s are saved in the audit trail next to the proposal, so every purchase decision traces back to the context it used.
+
+### Analytics on Amplitude
+
+Every audit-trail event (searches, picks, proposals, approvals, bookings, alerts, teasers, LinkedIn connects) is also sent to **Amplitude** with a hashed user id and no message text, so the funnel from suggestion to approved booking is measurable.
+
 ### Memory on SingleStore
 
 Every event Plus One shows or reads goes into a SingleStore `events` table with a `FULLTEXT` index on title, description and host. `recall_events` uses `MATCH ... AGAINST`, so "book that robotics thing from earlier" works without searching again. Rules, bookings (reference table, so ids stay #1, #2…), your location, alert history and the audit trail live there too. If SingleStore is unreachable, Plus One switches to a local SQLite file automatically and keeps answering.
@@ -114,6 +122,8 @@ Optional:
 - **Claude** (`claude-opus-5-5`, Messages API tool use, server-side refusal fallback)
 - **Inkbox** for the iMessage line and the agent's email inbox
 - **SingleStore** (Helios) for memory, full-text event recall and the audit trail
+- **Senso** context layer for trusted context behind booking decisions
+- **Amplitude** for agent analytics
 - **Luma** public discover + event lookup, **Meetup** GraphQL search, **Partiful** page parsing
 - **macOS Calendar** via AppleScript (works with Google/iCloud calendars synced to it)
 - **OpenStreetMap Nominatim** + **OSRM** for drive times

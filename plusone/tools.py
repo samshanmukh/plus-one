@@ -326,7 +326,9 @@ def connected_sources(chat: str) -> dict:
 
 
 def save_rule(chat: str, text: str, kind: str = "preference") -> dict:
+    from . import senso
     rid = store.add_rule(chat, kind, text)
+    senso.add_doc(f"Plus One rule #{rid} ({kind})", f"{config.OWNER_NAME}'s {kind} rule for events and tickets: {text}")
     return {"saved": True, "rule_id": rid, "rules": store.list_rules(chat)}
 
 
@@ -352,11 +354,18 @@ def propose_booking(chat: str, event_id: str, reason: str, rules_applied: list[s
             clashes = calendar_mac.conflicts(s, f)
         except Exception as exc:  # calendar unavailable should not block a proposal
             clashes = [{"title": f"(calendar check failed: {exc})"}]
+    from . import senso
+    trusted = senso.context(f"Should {config.OWNER_NAME} attend '{e['title']}' ({e['price']}, {e.get('when') or e.get('start')})? "
+                            "Their budget, interests, schedule rules and past preferences.")
     bid = store.propose_booking(chat, e, reason + (f" | rules: {'; '.join(rules_applied)}" if rules_applied else ""))
     store.audit(chat, "proposal", f"Proposed booking #{bid}: {e['title']} ({e['price']})",
-                {"event": _compact(e), "reason": reason, "rules_applied": rules_applied, "conflicts": clashes},
-                booking_id=bid)
+                {"event": _compact(e), "reason": reason, "rules_applied": rules_applied, "conflicts": clashes,
+                 "senso_context": trusted}, booking_id=bid)
+    if trusted:
+        store.audit(chat, "senso_context", f"Checked Senso trusted context for booking #{bid}: "
+                    + "; ".join(f"{t['title']} ({(t['content_id'] or '')[:8]})" for t in trusted[:3]), booking_id=bid)
     return {"booking_id": bid, "event": _compact(e), "conflicts": clashes,
+            "trusted_context": trusted or "Senso not configured",
             "next": "Ask the user to reply YES to book (or NO). Do not call execute_booking until they approve."}
 
 
@@ -389,6 +398,10 @@ def execute_booking(chat: str, booking_id: int) -> dict:
     if e.get("requires_approval"):
         result["rsvp"]["note"] = "Host approves guests; you'll get an email from the host."
     store.finish_booking(booking_id, result)
+    from . import senso
+    senso.add_doc(f"Plus One booking #{booking_id}: {e['title']}"[:200],
+                  f"{config.OWNER_NAME} booked '{e['title']}' on {e.get('start')} at {e.get('venue')}, price {e['price']}, "
+                  f"approved by text '{b.get('approval_text')}' at {b.get('approved_at')}. Reason: {b['reason']}. Source: {e['url']}")
     store.audit(chat, "booking", f"Executed booking #{booking_id}: {e['title']}", result, booking_id=booking_id)
     return result
 

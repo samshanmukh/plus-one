@@ -70,6 +70,12 @@ def build_profile(chat: str) -> dict:
                    "topics": dict(topics.most_common(40)), "venues": dict(venues.most_common(15)),
                    "examples": sorted(seen_titles)[:15]}
         store.set_state(PROFILE_KEY.format(chat=chat), profile)
+        from . import senso
+        senso.add_doc(f"Plus One taste profile ({profile['built'][:10]})",
+                      f"{config.OWNER_NAME} mostly attends events about: "
+                      + ", ".join(f"{k} ({v}x)" for k, v in list(profile['topics'].items())[:20])
+                      + ". Favorite venues: " + ", ".join(f"{k} ({v}x)" for k, v in list(profile['venues'].items())[:8])
+                      + f". Learned from {profile['events_learned_from']} past events.")
         store.audit(chat, "taste", f"Learned taste from {len(seen_titles)} past events: "
                     + ", ".join(list(profile["topics"])[:8]))
         return profile

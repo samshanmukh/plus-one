@@ -256,6 +256,13 @@ def list_bookings(chat: str, limit: int = 10) -> list[dict]:
 
 # --------------------------------------------------------------------------- audit trail
 def audit(chat: str, kind: str, summary: str, detail: Any = None, booking_id: int | None = None) -> None:
+    from . import analytics
+    props: dict = {"booking_id": booking_id} if booking_id else {}
+    if kind not in ("message_in", "message_out"):
+        props["summary"] = summary[:120]
+    else:
+        props["length"] = len(summary)
+    analytics.track(chat, kind, props)
     _x("INSERT INTO audit(chat, kind, summary, detail, booking_id, at) VALUES (?,?,?,?,?,?)",
        chat, kind, summary[:500], json.dumps(detail, default=str)[:4000] if detail is not None else None,
        booking_id, now_iso())
