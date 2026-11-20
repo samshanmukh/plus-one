@@ -2,7 +2,9 @@
 
 No app, no website. You text Plus One like a friend, and it:
 
-- **Finds events** on **Luma** and **Meetup**, or reads any **Luma / Meetup / Partiful** link you send
+- **Suggests events you'd actually go to**: learns your taste from your calendar history (topics, venues), your stated interests and budget, skips clashes, and boosts events your LinkedIn connections attend. Each pick says why.
+- **Shows each pick as a tappable event card** (bare links render as rich previews in iMessage)
+- **Finds events** on **Luma** and **Meetup** by topic, or reads any **Luma / Meetup / Partiful** link you send
 - **Books them for you** (RSVP for free events, checkout link for paid ones), **only after you reply YES**
 - **Knows what you're already going to**: your RSVPs from your calendar, with double-bookings flagged
 - **Texts you your check-in QR**: "my ticket for HackwithBay" → the Luma check-in QR as an image, built from the guest key in your calendar invite
@@ -51,7 +53,7 @@ iMessage ──> Inkbox (iMessage line + email inbox) ──poll──> plusone.
                                                               │  └─ host-email relay (every 1 min)
                                        plusone.brain: Claude (claude-opus-5-5) tool loop
                                                               │
-  search_events · get_event_from_link · recall_events · my_events · check_calendar
+  suggest_for_me · search_events · get_event_from_link · recall_events · my_events · check_calendar
   propose_booking / execute_booking · who_is_going · set_location / travel_time
   save_rule / list_rules · get_audit_trail
         │                 │                    │                       │
@@ -70,6 +72,10 @@ iMessage ──> Inkbox (iMessage line + email inbox) ──poll──> plusone.
 - **Only you can talk to it.** `ALLOWED_NUMBERS` restricts who it answers.
 - **Everything is logged:** searches (sources, query, filters, counts), calendar reads, rules, proposals (reason, rules applied, conflicts), approvals (your exact words and time), bookings, alerts and relayed emails.
 - Event pages, emails and search results are treated as data, not instructions.
+
+### How picks are personal
+
+`plusone/taste.py` reads ~60 days of your calendar (in the background, cached daily) and keeps a profile of the topics and venues you actually show up for, e.g. `ai ×17, hackathon ×15, agents ×6`, `AWS Builder Loft ×4`. `suggest_for_me` pulls this week's Luma and Meetup events, scores each against that profile plus your saved interests, drops sold-out, over-budget and clashing ones, and adds +2 per LinkedIn connection attending.
 
 ### Memory on SingleStore
 

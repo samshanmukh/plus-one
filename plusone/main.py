@@ -36,8 +36,11 @@ def process(msg: dict) -> None:
     except Exception:
         traceback.print_exc()
         reply = "Something went wrong on my side. Try again in a moment."
-    for chunk in _chunks(reply):
+    text, cards = _split_cards(reply)
+    for chunk in _chunks(text):
         inkbox.send(conv, chunk)
+    for url in cards:  # a bare link on its own renders as a rich event card in iMessage
+        inkbox.send(conv, url)
     from . import tools
     for path in tools.outbox_media.pop(number or conv, []):
         try:
@@ -126,6 +129,24 @@ def seed_conversations() -> None:
             store.set_state(f"conv:{n}", msg["conversation_id"])
 
 
+EVENT_URL = re.compile(r"https?://(?:www\.)?(?:lu\.ma|luma\.com|partiful\.com|meetup\.com|eventbrite\.[a-z.]+)/\S+")
+
+
+def _split_cards(reply: str, max_cards: int = 3) -> tuple[str, list[str]]:
+    """Pull event links out of the text so each can be sent alone (iMessage shows a preview card)."""
+    urls = []
+    for u in EVENT_URL.findall(reply):
+        u = u.rstrip(").,;")
+        if u not in urls:
+            urls.append(u)
+    if not urls:
+        return reply, []
+    text = EVENT_URL.sub("", reply)
+    text = re.sub(r"[ \t]*\b(Link|RSVP|Tickets?|Details):[ \t]*$", "", text, flags=re.M | re.I)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text, urls[:max_cards]
+
+
 def _chunks(text: str, size: int = 1800) -> list[str]:
     parts, cur = [], ""
     for para in text.split("\n\n"):
@@ -148,6 +169,9 @@ def main() -> None:
     except Exception as exc:
         log.warning("calendar warm-up failed: %s", exc)
     log.info("Plus One is listening on iMessage (polling every %ss)", config.POLL_SECONDS)
+    from . import taste
+    for number in config.ALLOWED_NUMBERS:
+        taste.refresh_in_background(number)  # learn taste from calendar history (slow, runs in background)
     try:
         seed_conversations()
     except Exception as exc:

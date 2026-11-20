@@ -193,6 +193,72 @@ def ticket_qr(chat: str, event: str) -> dict:
             "note": "The QR image is attached to your reply automatically. Mention it is their Luma check-in code."}
 
 
+def suggest_for_me(chat: str, start: str | None = None, end: str | None = None, limit: int = 5) -> dict:
+    """Rank upcoming events by the user's taste (calendar history + stated interests), skipping clashes."""
+    import re
+    from . import linkedin, taste
+    profile = taste.get_profile(chat)
+    if not profile:
+        taste.refresh_in_background(chat, max_age_hours=0)
+        return {"error": "Still learning your taste from your calendar (takes ~2 minutes the first time). Ask again shortly, or tell me a topic."}
+    after = _dt(start) or datetime.now(config.TZ)
+    before = _dt(end) or after + timedelta(days=7)
+    rules = store.list_rules(chat)
+    rules_text = " ".join(r["text"] for r in rules if r["kind"] in ("interest", "preference"))
+    budget = None
+    for r in rules:
+        m = re.search(r"\$\s*(\d+)", r["text"])
+        if r["kind"] == "budget" and m:
+            budget = float(m.group(1))
+    pool = sources.search_luma("", after, before, limit=400)
+    top_topics = list(profile["topics"])[:3]
+    for t in top_topics:
+        try:
+            pool += sources.search_meetup(t, after, before, limit=10)
+        except Exception:
+            pass
+    going = {e["title"].lower() for e in my_events(chat, after.isoformat(), before.isoformat())["events"]}
+    ranked = []
+    seen = set()
+    for e in pool:
+        key = re.sub(r"[^a-z0-9]", "", (e["title"] or "").lower())[:40]
+        if key in seen or e.get("sold_out") or (e["title"] or "").lower() in going:
+            continue
+        seen.add(key)
+        if budget is not None and not e["is_free"]:
+            m = re.search(r"[\d.]+", e["price"] or "")
+            if m and float(m.group(0)) > budget:
+                continue
+        sc, reasons = taste.score(e, profile, rules_text)
+        if sc > 0.5:
+            ranked.append((sc, e, reasons))
+    ranked.sort(key=lambda x: -x[0])
+    picks = []
+    for sc, e, reasons in ranked[: limit * 2]:
+        s_, f_ = _dt(e.get("start")), _dt(e.get("end"))
+        try:
+            clash = calendar_mac.conflicts(s_, f_ or s_ + timedelta(hours=2)) if s_ else []
+        except Exception:
+            clash = []
+        if clash:
+            continue
+        if e["source"] == "luma" and any(linkedin.connections()):
+            try:
+                people = who_is_going(chat, e["url"]).get("connections_going") or []
+                if people:
+                    reasons.append(f"{len(people)} of your LinkedIn connections: " + ", ".join(p["name"] for p in people[:3]))
+                    sc += 2 * len(people)
+            except Exception:
+                pass
+        _seen_events[e["id"]] = e
+        picks.append({**_compact(e), "why": reasons, "score": round(sc, 1)})
+        if len(picks) >= limit:
+            break
+    store.remember_events(chat, [_seen_events[p["id"]] for p in picks])
+    return {"picks": picks, "learned_from": profile["events_learned_from"],
+            "your_top_topics": list(profile["topics"])[:8], "checked": len(seen)}
+
+
 def save_rule(chat: str, text: str, kind: str = "preference") -> dict:
     rid = store.add_rule(chat, kind, text)
     return {"saved": True, "rule_id": rid, "rules": store.list_rules(chat)}
@@ -331,6 +397,13 @@ TOOLS: list[dict] = [
                          "required": ["event"]},
     },
     {
+        "name": "suggest_for_me",
+        "description": "Personal picks: upcoming events ranked by what the user actually goes to (learned from their calendar history), their stated interests and budget, skipping clashes, boosted when LinkedIn connections attend. Use this first for open requests like 'anything for me this weekend?', 'what should I go to?'.",
+        "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+            "start": {"type": "string", "description": "ISO 8601; default now"},
+            "end": {"type": "string", "description": "ISO 8601; default 7 days later"}}, "required": []},
+    },
+    {
         "name": "check_calendar",
         "description": "List the user's calendar events between two ISO 8601 times, to find conflicts or free time.",
         "input_schema": {"type": "object", "additionalProperties": False, "properties": {
@@ -389,6 +462,7 @@ _FUNCS = {
     "travel_time": lambda chat, a: travel_time(chat, a["destination"]),
     "who_is_going": lambda chat, a: who_is_going(chat, a["url"]),
     "ticket_qr": lambda chat, a: ticket_qr(chat, a["event"]),
+    "suggest_for_me": lambda chat, a: suggest_for_me(chat, a.get("start"), a.get("end")),
     "check_calendar": lambda chat, a: check_calendar(chat, a["start"], a["end"]),
     "save_rule": lambda chat, a: save_rule(chat, a["text"], a.get("kind", "preference")),
     "list_rules": lambda chat, a: list_rules(chat),
