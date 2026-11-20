@@ -38,6 +38,12 @@ def process(msg: dict) -> None:
         reply = "Something went wrong on my side. Try again in a moment."
     for chunk in _chunks(reply):
         inkbox.send(conv, chunk)
+    from . import tools
+    for path in tools.outbox_media.pop(number or conv, []):
+        try:
+            inkbox.send(conv, None, media_url=inkbox.upload_media(path))
+        except Exception as exc:
+            log.warning("couldn't send image %s: %s", path, exc)
     log.info("-> %s: %s", number, reply)
 
 

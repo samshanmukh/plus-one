@@ -60,10 +60,17 @@ class _DB:
                     cur.execute(sql, params)
                     rows = [dict(r) for r in cur.fetchall()] if fetch else []
                     return rows, int(cur.lastrowid or 0), int(cur.rowcount or 0)
-                except Exception:
+                except Exception as exc:
                     if self.kind == "singlestore" and attempt == 1:
                         self._conn = None  # dropped connection: reconnect once
                         continue
+                    if self.kind == "singlestore" and "Can't connect" in str(exc):
+                        # SingleStore unreachable: keep the agent alive on the local SQLite file.
+                        import logging
+                        logging.getLogger("plusone").warning("SingleStore unreachable, falling back to SQLite: %s", exc)
+                        self.kind, self._conn = "sqlite", None
+                        for stmt in SQLITE_SCHEMA:
+                            self.run(stmt)
                     raise
         raise RuntimeError("unreachable")
 
@@ -113,6 +120,11 @@ S2_SCHEMA = [
 
 
 def init() -> None:
+    if db.kind == "singlestore":
+        try:
+            db.run("SELECT 1", fetch=True)
+        except Exception:
+            pass  # run() has switched to SQLite if SingleStore is unreachable
     for stmt in (S2_SCHEMA if db.kind == "singlestore" else SQLITE_SCHEMA):
         _x(stmt)
 

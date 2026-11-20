@@ -23,6 +23,9 @@ def main() -> None:
             break
         if text:
             print("\nplus one> " + brain.handle(CHAT, text))
+            from . import tools
+            for path in tools.outbox_media.pop(CHAT, []):
+                print(f"[image attached: {path}]")
 
 
 if __name__ == "__main__":

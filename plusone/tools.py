@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from . import calendar_mac, config, sources, store
@@ -154,6 +155,44 @@ def who_is_going(chat: str, url: str) -> dict:
             "note": "Luma only shows hosts and featured guests publicly, so others may be going too."}
 
 
+# Images a tool wants sent with the next reply (main.py uploads and attaches them).
+outbox_media: dict[str, list[str]] = {}
+QR_DIR = Path(__file__).resolve().parent.parent / "data" / "qr"
+
+
+def ticket_qr(chat: str, event: str) -> dict:
+    """Make the user's Luma check-in QR for an event they're registered for, to send as an image."""
+    import re
+    import qrcode
+    now = datetime.now(config.TZ)
+    mine = my_events(chat, (now - timedelta(days=1)).isoformat(), (now + timedelta(days=30)).isoformat())["events"]
+    words = [w for w in re.findall(r"[a-z0-9]+", event.lower()) if len(w) > 2]
+    def score(e: dict) -> int:
+        return sum(w in e["title"].lower() for w in words)
+    luma = [e for e in mine if e["source"] == "luma" and e.get("link") and "pk=" in e["link"]]
+    if not luma:
+        return {"error": "No Luma events with a personal ticket link on your calendar in the next 30 days."}
+    best = max(luma, key=score)
+    if words and score(best) == 0:
+        return {"error": f"Couldn't match '{event}'.", "your_luma_events": [e["title"] for e in luma]}
+    m = re.search(r"(?:lu\.ma|luma\.com)/([A-Za-z0-9-]+)\?pk=([A-Za-z0-9_-]+)", best["link"])
+    if not m:
+        return {"error": "That event's link has no guest key."}
+    slug, pk = m.groups()
+    data = sources.http.get("https://api.lu.ma/url", params={"url": slug}).json().get("data", {})
+    event_id = data.get("api_id") or (data.get("event") or {}).get("api_id")
+    if not event_id:
+        return {"error": "Luma didn't return the event id."}
+    QR_DIR.mkdir(parents=True, exist_ok=True)
+    path = QR_DIR / f"{event_id}.png"
+    img = qrcode.make(f"https://luma.com/check-in/{event_id}?pk={pk}", box_size=12, border=3)
+    img.save(path)
+    outbox_media.setdefault(chat, []).append(str(path))
+    store.audit(chat, "ticket", f"Generated check-in QR for {best['title'][:60]}")
+    return {"qr_ready": True, "event": best["title"], "when": best["when"], "where": best["where"],
+            "note": "The QR image is attached to your reply automatically. Mention it is their Luma check-in code."}
+
+
 def save_rule(chat: str, text: str, kind: str = "preference") -> dict:
     rid = store.add_rule(chat, kind, text)
     return {"saved": True, "rule_id": rid, "rules": store.list_rules(chat)}
@@ -285,6 +324,13 @@ TOOLS: list[dict] = [
                          "properties": {"url": {"type": "string", "description": "Luma event URL"}}, "required": ["url"]},
     },
     {
+        "name": "ticket_qr",
+        "description": "Send the user's Luma check-in QR code (as an image) for an event they're registered for, e.g. 'my QR for HackwithBay', 'ticket for tonight'.",
+        "input_schema": {"type": "object", "additionalProperties": False,
+                         "properties": {"event": {"type": "string", "description": "Event name or words from it"}},
+                         "required": ["event"]},
+    },
+    {
         "name": "check_calendar",
         "description": "List the user's calendar events between two ISO 8601 times, to find conflicts or free time.",
         "input_schema": {"type": "object", "additionalProperties": False, "properties": {
@@ -342,6 +388,7 @@ _FUNCS = {
     "set_location": lambda chat, a: set_location(chat, a["place"]),
     "travel_time": lambda chat, a: travel_time(chat, a["destination"]),
     "who_is_going": lambda chat, a: who_is_going(chat, a["url"]),
+    "ticket_qr": lambda chat, a: ticket_qr(chat, a["event"]),
     "check_calendar": lambda chat, a: check_calendar(chat, a["start"], a["end"]),
     "save_rule": lambda chat, a: save_rule(chat, a["text"], a.get("kind", "preference")),
     "list_rules": lambda chat, a: list_rules(chat),

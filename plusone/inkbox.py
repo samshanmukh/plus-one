@@ -16,8 +16,11 @@ def unread_inbound(limit: int = 50) -> list[dict]:
     return sorted(msgs, key=lambda m: m["created_at"])
 
 
-def send(conversation_id: str, text: str) -> dict:
-    r = _client.post("/messages", json={"conversation_id": conversation_id, "text": text})
+def send(conversation_id: str, text: str | None, media_url: str | None = None) -> dict:
+    body: dict = {"conversation_id": conversation_id, "text": text}
+    if media_url:
+        body["media_urls"] = [media_url]
+    r = _client.post("/messages", json=body)
     r.raise_for_status()
     return r.json()
 
@@ -53,3 +56,11 @@ def recent_imessages(limit: int = 50) -> list[dict]:
     r = _client.get("/messages", params={"limit": limit})
     r.raise_for_status()
     return r.json()
+
+
+def upload_media(path: str) -> str:
+    with open(path, "rb") as f:
+        r = httpx.post(config.INKBOX_BASE + "/media", headers={"X-API-Key": config.INKBOX_API_KEY},
+                       files={"file": (path.rsplit("/", 1)[-1], f, "image/png")}, timeout=30)
+    r.raise_for_status()
+    return r.json()["media_url"]

@@ -5,7 +5,7 @@ No app, no website. You text Plus One like a friend, and it:
 - **Finds events** on **Luma** and **Meetup**, or reads any **Luma / Meetup / Partiful** link you send
 - **Books them for you** (RSVP for free events, checkout link for paid ones), **only after you reply YES**
 - **Knows what you're already going to**: your RSVPs from your calendar, with double-bookings flagged
-- **Hands you your ticket**: your personal Luma link that opens the check-in QR
+- **Texts you your check-in QR**: "my ticket for HackwithBay" → the Luma check-in QR as an image, built from the guest key in your calendar invite
 - **Tells you when to leave**: drive time from where you are, texted before it's time to go
 - **Tells you who you know there**: matches the event's hosts and featured guests against your LinkedIn connections
 - **Relays host messages**: emails from Luma, Partiful or Meetup hosts arrive as a short text
@@ -73,7 +73,7 @@ iMessage ──> Inkbox (iMessage line + email inbox) ──poll──> plusone.
 
 ### Memory on SingleStore
 
-Every event Plus One shows or reads goes into a SingleStore `events` table with a `FULLTEXT` index on title, description and host. `recall_events` uses `MATCH ... AGAINST`, so "book that robotics thing from earlier" works without searching again. Rules, bookings (reference table, so ids stay #1, #2…), your location, alert history and the audit trail live there too.
+Every event Plus One shows or reads goes into a SingleStore `events` table with a `FULLTEXT` index on title, description and host. `recall_events` uses `MATCH ... AGAINST`, so "book that robotics thing from earlier" works without searching again. Rules, bookings (reference table, so ids stay #1, #2…), your location, alert history and the audit trail live there too. If SingleStore is unreachable, Plus One switches to a local SQLite file automatically and keeps answering.
 
 ## Run it
 
