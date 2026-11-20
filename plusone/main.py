@@ -83,6 +83,25 @@ def handle_attachments(chat: str, conv: str, media: list[dict]) -> bool:
     return False
 
 
+def nudge_missing_sources() -> None:
+    """Once per platform: if the user's calendar shows events from a platform that isn't connected, ask them to connect it."""
+    from . import tools
+    for number in config.ALLOWED_NUMBERS:
+        conv = store.get_state(f"conv:{number}")
+        if not conv:
+            continue
+        for src in tools.connected_sources(number)["sources"]:
+            key = f"nudged:{number}:{src['source']}"
+            if src["source"] == "partiful" and src["events_seen"] and src["status"] == "not connected" and not store.get_state(key):
+                msg = (f"I see {src['events_seen']} Partiful event(s) on your calendar. Partiful doesn't let apps sign in, "
+                       "so to connect it just forward me your Partiful invite links (the texts Partiful sends). "
+                       "I'll track them for clashes, leave-now alerts and reminders.")
+                inkbox.send(conv, msg)
+                store.set_state(key, True)
+                store.add_message(number, "assistant", msg)
+                store.audit(number, "nudge", "Asked to connect Partiful (events seen on calendar)")
+
+
 PEOPLE_EVERY = 3600  # re-check who's going to your events hourly
 
 
@@ -261,6 +280,7 @@ def main() -> None:
             last_people_check = time.time()
             try:
                 check_people_at_events()
+                nudge_missing_sources()
             except Exception as exc:
                 log.warning("people check error: %s", exc)
         if time.time() - last_mail_check > MAIL_EVERY:

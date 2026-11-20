@@ -94,6 +94,16 @@ def my_events(chat: str, start: str | None = None, end: str | None = None) -> di
                        "start": e["start"], "end": e["end"], "source": source,
                        "link": _link(blob) or (e.get("url") or None), "where": (e.get("location") or "")[:160],
                        "all_day": (ee - es).total_seconds() >= 20 * 3600})
+    have = {e["title"].lower() for e in events}
+    for t in store.get_state(f"tracked:{chat}") or []:
+        ts, te = _dt(t.get("start")), _dt(t.get("end"))
+        if not ts or ts > f or (te or ts) < s or t["title"].lower() in have:
+            continue
+        events.append({"title": t["title"], "when": _local(t["start"]), "until": _local(t.get("end")),
+                       "start": t["start"], "end": t.get("end") or (ts + timedelta(hours=2)).isoformat(),
+                       "source": t["source"], "link": t["url"], "where": (t.get("venue") or "")[:160],
+                       "all_day": False, "tracked": True})
+    events.sort(key=lambda e: e["start"])
     timed = [e for e in events if not e["all_day"]]
     clashes = []
     for i, a in enumerate(timed):
@@ -272,6 +282,49 @@ def connect_linkedin(chat: str) -> dict:
                    "Plus One keeps them private to you and re-checks your upcoming events for people you know."}
 
 
+def track_event(chat: str, url: str) -> dict:
+    """Follow an event the user is going to from a link (how Partiful and other link-only sources connect)."""
+    e = sources.event_from_link(url)
+    if not e:
+        return {"error": "Couldn't read an event from that link."}
+    tracked = [t for t in (store.get_state(f"tracked:{chat}") or []) if t["id"] != e["id"]]
+    tracked.append(e)
+    store.set_state(f"tracked:{chat}", tracked[-200:])
+    store.remember_events(chat, [e])
+    store.audit(chat, "track", f"Tracking {e['source']} event: {e['title'][:60]}")
+    return {"tracking": _compact(e), "note": "It now counts in my_events, clash checks and leave-now alerts."}
+
+
+SOURCE_INFO = {
+    "luma": "connected automatically: your Luma calendar invites carry your guest key (tickets, QR, host updates)",
+    "partiful": "link-connected: Partiful has no app sign-in, so forward your Partiful invite links (the texts Partiful sends you) and I'll track them",
+    "meetup": "link-connected: send your Meetup event links and I'll track them",
+    "eventbrite": "via calendar: your Eventbrite calendar is synced",
+    "linkedin": "send your LinkedIn Connections export to connect",
+}
+
+
+def connected_sources(chat: str) -> dict:
+    """Which event platforms the user uses (seen on their calendar or tracked) and how each is connected."""
+    now = datetime.now(config.TZ)
+    ev = my_events(chat, (now - timedelta(days=1)).isoformat(), (now + timedelta(days=30)).isoformat())["events"]
+    seen: dict[str, int] = {}
+    for e in ev:
+        if e["source"] in SOURCE_INFO:
+            seen[e["source"]] = seen.get(e["source"], 0) + 1
+    tracked = store.get_state(f"tracked:{chat}") or []
+    li = store.get_state(f"linkedin_meta:{chat}")
+    out = []
+    for src in ("luma", "partiful", "meetup", "eventbrite"):
+        n_track = sum(1 for t in tracked if t["source"] == src)
+        status = "connected" if src in ("luma", "eventbrite") and seen.get(src) else ("tracking" if n_track else "not connected")
+        out.append({"source": src, "events_seen": seen.get(src, 0), "tracked_links": n_track, "status": status,
+                    "how": SOURCE_INFO[src]})
+    out.append({"source": "linkedin", "status": "connected" if li else "not connected",
+                "connections": (li or {}).get("count", 0), "how": SOURCE_INFO["linkedin"]})
+    return {"sources": out}
+
+
 def save_rule(chat: str, text: str, kind: str = "preference") -> dict:
     rid = store.add_rule(chat, kind, text)
     return {"saved": True, "rule_id": rid, "rules": store.list_rules(chat)}
@@ -422,6 +475,17 @@ TOOLS: list[dict] = [
         "input_schema": {"type": "object", "additionalProperties": False, "properties": {}, "required": []},
     },
     {
+        "name": "track_event",
+        "description": "Track an event the user is going to from its link (Partiful, Meetup, Luma or any event page), so it shows in their events, clash checks and leave-now alerts. Call this whenever they send a Partiful invite link or say they're going to a linked event.",
+        "input_schema": {"type": "object", "additionalProperties": False,
+                         "properties": {"url": {"type": "string"}}, "required": ["url"]},
+    },
+    {
+        "name": "connected_sources",
+        "description": "Show which event platforms (Luma, Partiful, Meetup, Eventbrite, LinkedIn) are connected, which ones the user uses but hasn't connected, and how to connect each.",
+        "input_schema": {"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+    },
+    {
         "name": "check_calendar",
         "description": "List the user's calendar events between two ISO 8601 times, to find conflicts or free time.",
         "input_schema": {"type": "object", "additionalProperties": False, "properties": {
@@ -482,6 +546,8 @@ _FUNCS = {
     "ticket_qr": lambda chat, a: ticket_qr(chat, a["event"]),
     "suggest_for_me": lambda chat, a: suggest_for_me(chat, a.get("start"), a.get("end")),
     "connect_linkedin": lambda chat, a: connect_linkedin(chat),
+    "track_event": lambda chat, a: track_event(chat, a["url"]),
+    "connected_sources": lambda chat, a: connected_sources(chat),
     "check_calendar": lambda chat, a: check_calendar(chat, a["start"], a["end"]),
     "save_rule": lambda chat, a: save_rule(chat, a["text"], a.get("kind", "preference")),
     "list_rules": lambda chat, a: list_rules(chat),

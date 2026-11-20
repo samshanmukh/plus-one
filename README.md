@@ -10,6 +10,7 @@ No app, no website. You text Plus One like a friend, and it:
 - **Texts you your check-in QR**: "my ticket for HackwithBay" → the Luma check-in QR as an image, built from the guest key in your calendar invite
 - **Tells you when to leave**: drive time from where you are, texted before it's time to go
 - **Connects your LinkedIn over iMessage**: text "connect my LinkedIn", export your connections from LinkedIn, and send the file to Plus One. It stores them privately per user and then **monitors your upcoming events**, texting you when people you know are hosting or going
+- **Connects your sources as it finds them**: sees which platforms your events come from; Luma connects automatically from your calendar invites, and for Partiful (no app sign-in) it asks you to forward your invite links and then tracks those events for clashes and leave-now alerts
 - **Relays host messages**: emails from Luma, Partiful or Meetup hosts arrive as a short text
 - **Explains itself**: every search, rule, approval and booking is in an **audit trail**; text "why?"
 
