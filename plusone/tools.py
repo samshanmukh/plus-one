@@ -144,7 +144,7 @@ def travel_time(chat: str, destination: str) -> dict:
             "note": "Car estimate incl. traffic/parking padding; transit not included."}
 
 
-def who_is_going(chat: str, url: str) -> dict:
+def who_is_going(chat: str, url: str, send_photos: bool = True) -> dict:
     """Which of the user's LinkedIn connections are hosting or featured at a Luma event."""
     import re
     from . import linkedin
@@ -155,13 +155,19 @@ def who_is_going(chat: str, url: str) -> dict:
     if not m:
         return {"error": "Only Luma events show their guests publicly right now; send a Luma link."}
     d = sources.http.get("https://api.lu.ma/url", params={"url": m.group(1)}).json().get("data", {})
-    people = [{"name": h.get("name"), "linkedin_handle": h.get("linkedin_handle"), "role": "host"} for h in d.get("hosts") or []]
-    people += [{"name": g.get("name"), "linkedin_handle": g.get("linkedin_handle"), "role": "guest"}
-               for g in d.get("featured_guests") or []]
+    people = [{"name": h.get("name"), "linkedin_handle": h.get("linkedin_handle"), "role": "host",
+               "avatar_url": h.get("avatar_url")} for h in d.get("hosts") or []]
+    people += [{"name": g.get("name"), "linkedin_handle": g.get("linkedin_handle"), "role": "guest",
+                "avatar_url": g.get("avatar_url")} for g in d.get("featured_guests") or []]
     found = linkedin.match(people, chat)
+    if send_photos:
+        for p_ in found[:3]:
+            if p_.get("avatar_url"):
+                outbox_media.setdefault(chat, []).append(p_["avatar_url"])
     return {"event": (d.get("event") or {}).get("name"), "connections_going": found,
             "checked": len(people), "guest_count": d.get("guest_count"),
-            "note": "Luma only shows hosts and featured guests publicly, so others may be going too."}
+            "note": "Luma only shows hosts and featured guests publicly, so others may be going too. "
+                    "Their Luma profile photos are attached to your reply automatically."}
 
 
 # Images a tool wants sent with the next reply (main.py uploads and attaches them).

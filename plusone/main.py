@@ -49,7 +49,8 @@ def process(msg: dict) -> None:
     from . import tools
     for path in tools.outbox_media.pop(number or conv, []):
         try:
-            inkbox.send(conv, None, media_url=inkbox.upload_media(path))
+            url = path if path.startswith("http") else inkbox.upload_media(path)
+            inkbox.send(conv, None, media_url=url)
         except Exception as exc:
             log.warning("couldn't send image %s: %s", path, exc)
     log.info("-> %s: %s", number, reply)
@@ -147,7 +148,7 @@ def check_people_at_events(force: bool = False) -> None:
         for e in events:
             if e["source"] != "luma" or not e.get("link"):
                 continue
-            found = tools.who_is_going(number, e["link"]).get("connections_going") or []
+            found = tools.who_is_going(number, e["link"], send_photos=False).get("connections_going") or []
             new = [p for p in found if not store.get_state(f"people:{number}:{e['start']}:{p['name']}")]
             if not new:
                 continue
@@ -157,6 +158,12 @@ def check_people_at_events(force: bool = False) -> None:
             if len(new) > 4:
                 msg += f" +{len(new) - 4} more."
             inkbox.send(conv, msg)
+            for p in new[:3]:
+                if p.get("avatar_url"):
+                    try:
+                        inkbox.send(conv, None, media_url=p["avatar_url"])
+                    except Exception as exc:
+                        log.warning("photo send failed: %s", exc)
             for p in new:
                 store.set_state(f"people:{number}:{e['start']}:{p['name']}", True)
             store.add_message(number, "assistant", msg)

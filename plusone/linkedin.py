@@ -89,5 +89,5 @@ def match(people: list[dict], chat: str | None = None) -> list[dict]:
             hit, how = by_name.get(_norm(p.get("name", ""))), "name"
         if hit:
             found.append({"name": hit["name"], "role_at_event": p.get("role"), "company": hit["company"],
-                          "position": hit["position"], "matched_by": how})
+                          "position": hit["position"], "matched_by": how, "avatar_url": p.get("avatar_url")})
     return found
