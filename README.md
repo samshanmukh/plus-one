@@ -1,5 +1,9 @@
 # Plus One: your events agent, in iMessage
 
+[![Watch the Plus One promo (55s)](media/poster.png)](media/plus-one-promo.mp4)
+
+▶️ **[Watch the promo video (55s, with sound)](media/plus-one-promo.mp4)**
+
 No app, no website. You text Plus One like a friend, and it:
 
 - **Suggests events you'd actually go to**: learns your taste from your calendar history (topics, venues), your stated interests and budget, skips clashes, and boosts events your LinkedIn connections attend. Each pick says why.
@@ -9,6 +13,7 @@ No app, no website. You text Plus One like a friend, and it:
 - **Knows what you're already going to**: your RSVPs from your calendar, with double-bookings flagged
 - **Texts you your check-in QR**: "my ticket for HackwithBay" → the Luma check-in QR as an image, built from the guest key in your calendar invite
 - **Tells you when to leave**: drive time from where you are, texted before it's time to go
+- **Shows you their faces**: sends the Luma profile photos of connections hosting or going
 - **Connects your LinkedIn over iMessage**: text "connect my LinkedIn", export your connections from LinkedIn, and send the file to Plus One. It stores them privately per user and then **monitors your upcoming events**, texting you when people you know are hosting or going
 - **Connects your sources as it finds them**: sees which platforms your events come from; Luma connects automatically from your calendar invites, and for Partiful (no app sign-in) it asks you to forward your invite links and then tracks those events for clashes and leave-now alerts
 - **Relays host messages**: emails from Luma, Partiful or Meetup hosts arrive as a short text
@@ -124,6 +129,7 @@ Optional:
 - **SingleStore** (Helios) for memory, full-text event recall and the audit trail
 - **Senso** context layer for trusted context behind booking decisions
 - **Amplitude** for agent analytics
+- **ElevenLabs** voice, music and sound effects for the promo video (built with HyperFrames)
 - **Luma** public discover + event lookup, **Meetup** GraphQL search, **Partiful** page parsing
 - **macOS Calendar** via AppleScript (works with Google/iCloud calendars synced to it)
 - **OpenStreetMap Nominatim** + **OSRM** for drive times
