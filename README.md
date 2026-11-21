@@ -1,12 +1,8 @@
 # Plus One: your events agent, in iMessage
 
-
 https://github.com/user-attachments/assets/35fc064d-2cca-4c0f-b415-5dfa1bfec26b
 
-
-[![Watch the Plus One promo (55s)](media/poster.png)](media/plus-one-promo.mp4)
-
-▶️ **[Watch the promo video (55s, with sound)](media/plus-one-promo.mp4)**
+▶️ 55-second promo (turn sound on)
 
 No app, no website. You text Plus One like a friend, and it:
 
